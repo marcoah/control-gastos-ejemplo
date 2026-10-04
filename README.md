@@ -1,13 +1,15 @@
 # Control de Gastos
 
-Aplicación web para llevar el control de gastos a partir de facturas, con un CRUD de categorías y un tablero de indicadores.
+Aplicación web para llevar el control de gastos a partir de facturas, con CRUD de proveedores y categorías, un tablero de indicadores y un registro de errores.
 Corre en **Cloudflare Workers** (API + frontend estático) y guarda los datos en **Supabase** (PostgreSQL).
 
 Viene configurada para **Argentina**: pesos (ARS), formato `es-AR`, hora de Buenos Aires, CUIT, facturas A/B/C/M/E y alícuotas de IVA del 21 %, 10,5 % y 27 %.
 
-- **Facturas**: formulario de carga con tipo y número de comprobante, CUIT validado, cálculo automático de IVA y total; listado con búsqueda, filtros y paginación; edición y eliminación.
+- **Facturas**: formulario de carga con proveedor, tipo y número de comprobante, cálculo automático de IVA y total, importes en formato argentino (`1.234,56`) y validación en el navegador y en el servidor; listado con búsqueda, filtros y paginación; edición y eliminación.
+- **Proveedores**: CRUD con razón social, CUIT validado, condición frente al IVA, tipo de factura habitual y categoría por defecto (se sugieren al cargar una factura). También se pueden crear al vuelo desde el formulario de facturas.
 - **Categorías**: CRUD completo con color, presupuesto mensual y estado activa/inactiva.
 - **Tablero**: total de facturas cargadas, gasto del mes a la fecha y otros indicadores (ver [Indicadores](#indicadores-del-tablero)).
+- **Configuración**: estado del sistema (conexión con Supabase, variables configuradas, datos regionales) y un **visor de logs** con los errores de la API y del navegador (ver [Configuración y registro de errores](#configuración-y-registro-de-errores)).
 - Interfaz en tonos azul y blanco hecha con Tailwind CSS. No necesita build: es HTML + JS vanilla.
 
 ---
@@ -25,10 +27,11 @@ Viene configurada para **Argentina**: pesos (ARS), formato `es-AR`, hora de Buen
 9. [Modelo de datos](#modelo-de-datos)
 10. [Facturas, IVA y CUIT](#facturas-iva-y-cuit)
 11. [Indicadores del tablero](#indicadores-del-tablero)
-12. [API REST](#api-rest)
-13. [Seguridad](#seguridad)
-14. [Personalización](#personalización)
-15. [Solución de problemas](#solución-de-problemas)
+12. [Configuración y registro de errores](#configuración-y-registro-de-errores)
+13. [API REST](#api-rest)
+14. [Seguridad](#seguridad)
+15. [Personalización](#personalización)
+16. [Solución de problemas](#solución-de-problemas)
 
 ---
 
@@ -57,26 +60,37 @@ Viene configurada para **Argentina**: pesos (ARS), formato `es-AR`, hora de Buen
 control-gastos-ejemplo/
 ├── public/                     # Frontend estático (lo sirve el Worker)
 │   ├── index.html              # Layout, vistas y formularios (Tailwind)
-│   └── app.js                  # Lógica del frontend (SPA con rutas por hash)
+│   └── js/                     # Módulos ES del frontend (sin build)
+│       ├── app.js              # Arranque y navegación por hash
+│       ├── core.js             # Estado, API, formato es-AR, toasts y captura de errores
+│       ├── dashboard.js        # Tablero
+│       ├── facturas.js         # Formulario y listado de facturas
+│       ├── proveedores.js      # CRUD de proveedores y alta rápida
+│       ├── categorias.js       # CRUD de categorías
+│       └── configuracion.js    # Estado del sistema y visor de logs
 ├── src/                        # Código del Worker
-│   ├── index.js                # Entrada: router, Basic Auth y entrega de assets
+│   ├── index.js                # Entrada: router, Basic Auth, request id y registro de errores
 │   ├── handlers/
 │   │   ├── categorias.js       # CRUD de categorías
+│   │   ├── proveedores.js      # CRUD de proveedores
 │   │   ├── facturas.js         # CRUD y listado filtrado de facturas
+│   │   ├── logs.js             # Consulta, alta (desde el navegador) y limpieza de logs
+│   │   ├── sistema.js          # Estado del sistema (/api/estado)
 │   │   └── dashboard.js        # Resumen del tablero y /api/config
 │   └── lib/
-│       ├── http.js             # Respuestas JSON y traducción de errores de Postgres
+│       ├── http.js             # Respuestas JSON y traducción de errores de Postgres por campo
+│       ├── logger.js           # Escritura de logs en Supabase (sin bloquear la respuesta)
 │       ├── supabase.js         # Cliente de Supabase
-│       └── validate.js         # Validación de datos (incluye CUIT)
+│       └── validate.js         # Validación de datos (incluye CUIT e importes es-AR)
 ├── supabase/sql/               # Scripts SQL (ejecutar en orden)
-│   ├── 01_esquema.sql          # Tablas, restricciones, índices, triggers y cuit_valido()
-│   ├── 02_vistas_funciones.sql # Vista v_categorias, RPC dashboard_resumen y reset_datos
+│   ├── 01_esquema.sql          # Tablas, restricciones, índices, triggers, cuit_valido() y migración
+│   ├── 02_vistas_funciones.sql # Vistas v_categorias/v_proveedores, RPC dashboard_resumen y reset_datos
 │   ├── 03_seguridad.sql        # RLS y permisos
 │   ├── 04_categorias_base.sql  # (opcional) 10 categorías iniciales con presupuesto en ARS
-│   ├── 90_datos_prueba.sql     # (opcional) 100 facturas de prueba en SQL puro
+│   ├── 90_datos_prueba.sql     # (opcional) 23 proveedores y 100 facturas de prueba en SQL puro
 │   └── 99_reiniciar.sql        # Borra todos los datos y reinicia los ids
 ├── scripts/
-│   ├── seed.mjs                # Carga facturas de prueba (100 por defecto)
+│   ├── seed.mjs                # Carga proveedores y facturas de prueba (100 por defecto)
 │   └── reset.mjs               # Limpia la base de datos
 ├── .dev.vars.example           # Plantilla de variables locales y secretas (sin valores reales)
 ├── wrangler.toml               # Configuración del Worker (sin secretos)
@@ -113,6 +127,8 @@ npm install
    4. *(opcional)* `supabase/sql/04_categorias_base.sql`, para arrancar con 10 categorías
 
    Los scripts se pueden volver a ejecutar sin problema (usan `if not exists`, `create or replace` y `on conflict`).
+
+   > **¿Ya tenías instalada una versión anterior?** Volvé a ejecutar `01 → 02 → 03`. El script `01` detecta la estructura vieja y la actualiza solo: crea las tablas `proveedores` y `logs`, genera un proveedor por cada razón social distinta de tus facturas existentes, las vincula y ajusta la restricción de comprobante duplicado. No se pierde ningún dato.
 
    Con `psql` también funciona:
 
@@ -175,13 +191,13 @@ Hay dos opciones equivalentes: scripts de Node (usan `.dev.vars`) o SQL para peg
 
 | Opción | Comando / archivo | Qué hace |
 | --- | --- | --- |
-| Node | `npm run db:seed` | Crea las 10 categorías base si no existen y carga **100 facturas** |
+| Node | `npm run db:seed` | Crea las 10 categorías base y los 23 proveedores de prueba si no existen, y carga **100 facturas** |
 | Node | `npm run db:seed -- 300` | Igual, pero con 300 facturas (máximo 5000) |
 | SQL | `supabase/sql/90_datos_prueba.sql` | Lo mismo, en SQL puro |
 
 Cómo se generan los datos:
 
-- 23 proveedores **ficticios** con CUIT inventados. Los CUIT tienen dígito verificador válido, pero no corresponden a contribuyentes reales.
+- 23 proveedores **ficticios** con CUIT inventados (marcados con la nota "Proveedor de prueba"), con su condición frente al IVA, tipo de factura y categoría por defecto. Los CUIT tienen dígito verificador válido, pero no corresponden a contribuyentes reales.
 - Montos en pesos, con un rango propio para cada proveedor.
 - Mezcla de **facturas A** (IVA 21 %, 27 % en servicios públicos y telecomunicaciones, 10,5 % en pasajes), **B** (gastronomía) y **C** (monotributistas). Las B y C no discriminan IVA.
 - Alrededor del 25 % cae en el **mes en curso** (hora de Buenos Aires) y el resto en los 5 meses anteriores, para que el tablero y el gráfico tengan datos.
@@ -194,9 +210,9 @@ Podés correr el seed varias veces: cada corrida agrega más facturas.
 
 | Opción | Comando / archivo | Qué hace |
 | --- | --- | --- |
-| Node | `npm run db:reset` | ⚠️ Borra **todas** las facturas y categorías y reinicia los ids. Pide que escribas `si` para confirmar |
+| Node | `npm run db:reset` | ⚠️ Borra **todas** las facturas, proveedores, categorías y logs, y reinicia los ids. Pide que escribas `si` para confirmar |
 | Node | `npm run db:reset -- --yes` | Igual, sin pedir confirmación (útil en CI) |
-| Node | `npm run db:reset:demo` | Borra **solo** las facturas `DEMO-*` y conserva las tuyas |
+| Node | `npm run db:reset:demo` | Borra **solo** las facturas `DEMO-*` y los proveedores de prueba que quedaron sin facturas; conserva lo tuyo |
 | SQL | `supabase/sql/99_reiniciar.sql` | `TRUNCATE … RESTART IDENTITY`. Trae comentado cómo eliminar también la estructura |
 
 El reset no toca la estructura (tablas, vistas, funciones ni RLS): después podés volver a correr `db:seed` o empezar a cargar desde cero.
@@ -231,7 +247,7 @@ El reset no toca la estructura (tablas, vistas, funciones ni RLS): después pod�
 
 4. *(Opcional)* Para usar un dominio propio: en el panel de Cloudflare andá a **Workers & Pages → control-gastos → Settings → Domains & Routes → Add Custom Domain**.
 
-Para ver los logs en vivo: `npx wrangler tail`. La observabilidad ya viene activada en `wrangler.toml`.
+Los errores quedan en **Configuración → Registro de errores**. Si Supabase no responde (y por lo tanto no se pueden guardar ahí), igual se ven en vivo con `npx wrangler tail`; la observabilidad ya viene activada en `wrangler.toml`.
 
 ### Despliegue continuo (opcional)
 
@@ -270,6 +286,19 @@ Podés conectar el repo en **Workers & Pages → Create → Import a repository*
 | `activa` | boolean | Las inactivas no aparecen al cargar facturas |
 | `created_at` / `updated_at` | timestamptz | `updated_at` lo mantiene un trigger |
 
+### `proveedores`
+
+| Columna | Tipo | Notas |
+|---|---|---|
+| `id` | bigint identity | PK |
+| `razon_social` | text | Única, de 2 a 150 caracteres |
+| `cuit` | text | Opcional y único. 11 dígitos sin guiones, validado por `cuit_valido()` |
+| `condicion_iva` | text | `responsable_inscripto`, `monotributista`, `exento`, `no_alcanzado` o `exterior` |
+| `tipo_comprobante` | text | Factura habitual (`A`…`E`), opcional. Se preselecciona al cargar una factura |
+| `categoria_id` | bigint | Categoría por defecto, opcional (FK con `ON DELETE SET NULL`) |
+| `email`, `telefono`, `notas` | text | Opcionales |
+| `activo` | boolean | Los inactivos no aparecen al cargar facturas nuevas |
+
 ### `facturas`
 
 | Columna | Tipo | Notas |
@@ -277,8 +306,8 @@ Podés conectar el repo en **Workers & Pages → Create → Import a repository*
 | `id` | bigint identity | PK |
 | `tipo_comprobante` | text | `A`, `B`, `C`, `M` o `E` |
 | `numero_comprobante` | text | Punto de venta y número, por ejemplo `00003-00012345` |
-| `proveedor` | text | Razón social, de 2 a 150 caracteres |
-| `cuit_proveedor` | text | Opcional. 11 dígitos sin guiones, con dígito verificador validado por `cuit_valido()` |
+| `proveedor_id` | bigint | FK a `proveedores` con `ON DELETE RESTRICT` |
+| `proveedor`, `cuit_proveedor` | text | Copia de la razón social y el CUIT del emisor **al momento de la carga** (los completa el Worker; si después editás el proveedor, la factura conserva los datos con que se emitió) |
 | `fecha` | date | Fecha de emisión |
 | `categoria_id` | bigint | FK a `categorias` con `ON DELETE RESTRICT` |
 | `subtotal` | numeric(14,2) | Neto gravado (o el importe total en facturas B/C) |
@@ -288,18 +317,36 @@ Podés conectar el repo en **Workers & Pages → Create → Import a repository*
 | `estado` | text | `pagada`, `pendiente` o `cancelada` (anulada) |
 | `notas` | text | Opcional, ≤ 500 caracteres |
 
-Restricción de unicidad: `(proveedor, tipo_comprobante, numero_comprobante)`. Evita cargar dos veces el mismo comprobante.
+Restricción de unicidad: `(proveedor_id, tipo_comprobante, numero_comprobante)`. Evita cargar dos veces el mismo comprobante.
+
+### `logs`
+
+| Columna | Tipo | Notas |
+|---|---|---|
+| `created_at` | timestamptz | Momento del error |
+| `nivel` | text | `error` (5xx, excepciones), `warn` (datos inválidos, duplicados) o `info` |
+| `origen` | text | `api` (Worker), `frontend` (navegador) o `sistema` |
+| `mensaje` | text | Mensaje legible |
+| `detalle` | jsonb | Error original de Postgres (código, detalle, hint), stack y el cuerpo enviado |
+| `metodo`, `ruta`, `status` | | Petición que falló |
+| `request_id` | text | Código de seguimiento; es el mismo que ve el usuario en el aviso de error |
+| `user_agent` | text | Navegador |
 
 ### Objetos adicionales
 
 - **`cuit_valido(text)`**: valida el CUIT/CUIL (11 dígitos + dígito verificador módulo 11).
-- **`v_categorias`** (vista): categorías con su número de facturas y gasto histórico.
+- **`v_categorias`** / **`v_proveedores`** (vistas): con su número de facturas, gasto histórico y (en proveedores) la fecha de la última factura.
 - **`dashboard_resumen(p_hoy date)`** (RPC): devuelve en un solo JSON todos los datos del tablero.
 - **`reset_datos()`** (RPC): vacía las tablas y reinicia los ids. Solo la puede ejecutar `service_role`.
 
 ---
 
 ## Facturas, IVA y CUIT
+
+- **Proveedor**: se elige de la lista (o se crea con **+ Nuevo proveedor** sin salir del formulario). En una factura nueva, el formulario sugiere el tipo de factura habitual y la categoría por defecto del proveedor.
+- **Número de comprobante**: si escribís `3-12345` se completa a `00003-00012345`.
+- **Importes**: se escriben como en Argentina (`150.000,50`); también se acepta el punto decimal (`150000.50`). Al salir del campo se formatean.
+- **Validación**: el navegador marca cada campo con problemas antes de enviar; el Worker vuelve a validar todo y, si la base rechaza algo (por ejemplo, un comprobante duplicado), el error vuelve **asociado al campo** correspondiente. El botón de guardar se bloquea mientras se envía, para evitar cargas dobles.
 
 - **Tipo de comprobante**: al elegir **A** o **M**, el formulario calcula el IVA con la alícuota seleccionada. Con **B**, **C** o **E**, el IVA pasa a "Exento / no discrimina" (impuestos en 0) y el importe completo va en *subtotal*.
 - **Alícuota**: 21 % (por defecto), 10,5 %, 27 %, exento o **manual**. Si editás el campo de impuestos a mano (por ejemplo, para sumar percepciones de IVA o IIBB), la alícuota pasa sola a "Manual" y deja de recalcularse.
@@ -329,6 +376,26 @@ Como el contexto es inflacionario, conviene leer las comparaciones contra el mes
 
 ---
 
+## Configuración y registro de errores
+
+La opción **Configuración** del menú tiene dos paneles:
+
+**Estado del sistema**
+- Conexión con Supabase y latencia, con la cantidad de registros de cada tabla. Si falta ejecutar algún SQL, lo indica.
+- Si las variables secretas están definidas (nunca muestra su valor) y si Basic Auth está activa.
+- Zona horaria, moneda, formato, IVA por defecto y versión.
+
+**Registro de errores (visor de logs)**
+- Lista los errores de la **API** (todas las respuestas 4xx y 5xx, salvo rutas inexistentes) y del **navegador** (excepciones de JavaScript y fallas de red).
+- Tarjetas con los errores y advertencias de las últimas 24 h; filtros por nivel, origen y texto (mensaje, ruta o código).
+- Al hacer clic en una fila se ve el detalle técnico: el error original de Postgres, el stack y **los datos que se intentaron guardar**. Así se puede diagnosticar, por ejemplo, por qué falló la carga de una factura.
+- Actualización automática cada 15 s (opcional), botón para registrar un evento de prueba, borrar los registros de más de 30 días o vaciar todo.
+- Cada respuesta de error de la API trae un `request_id`. Los errores 5xx lo muestran en el aviso ("Código a1b2c3d4"); buscándolo en el visor encontrás el detalle exacto.
+
+Los logs se escriben **sin demorar la respuesta** (`ctx.waitUntil`). El navegador limita sus envíos a 10 por minuto e ignora repetidos.
+
+---
+
 ## API REST
 
 Todas las rutas devuelven JSON. Si activás Basic Auth, también la requieren.
@@ -336,18 +403,27 @@ Todas las rutas devuelven JSON. Si activás Basic Auth, también la requieren.
 | Método | Ruta | Descripción |
 |---|---|---|
 | `GET` | `/api/config` | Moneda, locale, zona horaria, alícuota de IVA y fecha de hoy |
+| `GET` | `/api/estado` | Estado del sistema (conexión, variables definidas, conteos) |
 | `GET` | `/api/dashboard` | Resumen del tablero |
 | `GET` | `/api/categorias` | Lista de categorías (incluye `facturas` y `gasto_total`) |
 | `POST` | `/api/categorias` | Crea una categoría |
 | `PUT` | `/api/categorias/:id` | Actualiza una categoría |
 | `DELETE` | `/api/categorias/:id` | Elimina una categoría (responde `409` si tiene facturas) |
+| `GET` | `/api/proveedores` | Lista de proveedores (incluye `facturas`, `gasto_total`, `ultima_factura`) |
+| `GET` | `/api/proveedores/:id` | Detalle de un proveedor |
+| `POST` | `/api/proveedores` | Crea un proveedor |
+| `PUT` | `/api/proveedores/:id` | Actualiza un proveedor |
+| `DELETE` | `/api/proveedores/:id` | Elimina un proveedor (responde `409` si tiene facturas) |
 | `GET` | `/api/facturas` | Lista paginada con filtros |
 | `GET` | `/api/facturas/:id` | Detalle de una factura |
 | `POST` | `/api/facturas` | Crea una factura |
 | `PUT` | `/api/facturas/:id` | Actualiza una factura |
 | `DELETE` | `/api/facturas/:id` | Elimina una factura |
+| `GET` | `/api/logs` | Logs paginados. Filtros: `nivel`, `origen`, `q`, `page`, `page_size` (máx. 200) |
+| `POST` | `/api/logs` | Registra un error del navegador (`{ nivel, mensaje, detalle, ruta }`) |
+| `DELETE` | `/api/logs?antiguedad_dias=30` | Borra los logs de más de N días (`?todo=1` vacía la tabla) |
 
-**Filtros de `GET /api/facturas`:** `q` (busca en proveedor, número de comprobante o CUIT, con o sin guiones), `categoria_id`, `estado`, `desde`, `hasta` (`AAAA-MM-DD`), `page` (por defecto 1) y `page_size` (por defecto 15, máximo 100).
+**Filtros de `GET /api/facturas`:** `q` (busca en proveedor, número de comprobante o CUIT, con o sin guiones), `proveedor_id`, `categoria_id`, `estado`, `desde`, `hasta` (`AAAA-MM-DD`), `page` (por defecto 1) y `page_size` (por defecto 15, máximo 100).
 
 Respuesta:
 
@@ -366,8 +442,7 @@ curl -X POST https://control-gastos.<subdominio>.workers.dev/api/facturas \
   -d '{
     "tipo_comprobante": "A",
     "numero_comprobante": "00003-00012345",
-    "proveedor": "Librería Comercial Del Plata SRL",
-    "cuit_proveedor": "30-71234560-4",
+    "proveedor_id": 1,
     "fecha": "2026-10-04",
     "categoria_id": 1,
     "subtotal": 100000,
@@ -378,7 +453,9 @@ curl -X POST https://control-gastos.<subdominio>.workers.dev/api/facturas \
   }'
 ```
 
-**Errores:** `{ "error": "mensaje", "details": … }`
+La razón social y el CUIT del emisor no se envían: el Worker los toma del proveedor. Los importes pueden ir como número (`100000.5`) o como texto en formato argentino (`"100.000,50"`).
+
+**Errores:** `{ "error": "mensaje", "details": { "campo": "mensaje" } | null, "request_id": "a1b2c3d4" }` (el `request_id` también viaja en el encabezado `X-Request-Id`).
 
 | Código | Cuándo |
 |---|---|
@@ -386,8 +463,9 @@ curl -X POST https://control-gastos.<subdominio>.workers.dev/api/facturas \
 | `401` | Falta Basic Auth o es incorrecta |
 | `404` | Ruta o registro inexistente |
 | `405` | Método no permitido en esa ruta |
-| `409` | Comprobante duplicado (mismo proveedor, tipo y número), nombre de categoría repetido o categoría con facturas |
-| `422` | Validación fallida (por ejemplo, CUIT inválido). `details` trae el mensaje de cada campo |
+| `409` | Comprobante duplicado (mismo proveedor, tipo y número), razón social/CUIT/nombre de categoría repetido, o proveedor/categoría con facturas |
+| `413` | Cuerpo de la petición de más de 64 KB |
+| `422` | Validación fallida (CUIT inválido, proveedor inexistente o inactivo, importe inválido…). `details` trae el mensaje de cada campo |
 | `500` | Error de configuración o de la base de datos |
 
 ---
@@ -417,10 +495,10 @@ Además:
 ## Personalización
 
 - **Otro país o moneda:** cambiá `APP_CURRENCY`, `APP_LOCALE`, `APP_TIMEZONE` y `APP_IVA` en `wrangler.toml`. Si no usás CUIT, quitá la restricción `facturas_cuit_valido` en SQL y la validación `esCuitValido` en `src/lib/validate.js`. Los tipos de comprobante están en `TIPOS_COMPROBANTE` y en la restricción `facturas_tipo`.
-- **Alícuotas de IVA:** las opciones del selector están en `#f-alicuota` (`public/index.html`) y en `ALICUOTAS` (`public/app.js`).
-- **Colores:** el frontend usa la paleta `blue`/`slate` de Tailwind. Cambiando `blue-700`/`blue-900` en `public/index.html` y `public/app.js` modificás el tono principal.
+- **Alícuotas de IVA:** las opciones del selector están en `#f-alicuota` (`public/index.html`) y en `ALICUOTAS` (`public/js/facturas.js`).
+- **Colores:** el frontend usa la paleta `blue`/`slate` de Tailwind. Cambiando `blue-700`/`blue-900` en `public/index.html` y `public/js/*.js` modificás el tono principal.
 - **Tailwind en producción:** se usa el *Play CDN* para no necesitar build, por eso aparece un aviso en la consola del navegador. Si querés CSS optimizado, compilalo con la CLI de Tailwind (`npx tailwindcss -o public/styles.css --minify`, con `content: ['./public/**/*.{html,js}']` y el plugin `@tailwindcss/forms`) y reemplazá el `<script src="https://cdn.tailwindcss.com…">` por `<link rel="stylesheet" href="/styles.css">`.
-- **Más campos en facturas:** agregá la columna en `01_esquema.sql`, la validación en `validarFactura()` y el input en el formulario de `index.html` y en `guardarFactura()`/`editarFactura()` de `app.js`.
+- **Más campos en facturas:** agregá la columna en `01_esquema.sql`, la validación en `validarFactura()` (`src/lib/validate.js`), el input en el formulario de `index.html` y su lectura en `leerYValidar()`/`editar()` de `public/js/facturas.js`.
 
 ---
 
@@ -430,11 +508,13 @@ Además:
 |---|---|
 | `Configuración incompleta: faltan SUPABASE_URL…` | Falta `.dev.vars` en local o no ejecutaste `wrangler secret put` en producción |
 | `Could not find the table 'public.facturas'` / `PGRST205` | No ejecutaste los SQL, o Supabase todavía no recargó el esquema. En el SQL Editor corré `notify pgrst, 'reload schema';` |
-| `column "numero_comprobante" does not exist` | La tabla se creó con una versión anterior del esquema. Ejecutá `99_reiniciar.sql` con la sección de `drop` descomentada y volvé a correr los SQL desde `01` |
+| `La base de datos no tiene la estructura esperada…` o `column … does not exist` | El esquema es de una versión anterior. Volvé a ejecutar `01 → 02 → 03` (se actualiza sin perder datos). Si la tabla viene de la versión con RFC/folio (México), ejecutá `99_reiniciar.sql` con la sección de `drop` descomentada y reinstalá desde `01` |
+| No puedo guardar una factura | Mirá el campo marcado en rojo. Si el aviso trae un código, buscalo en **Configuración → Registro de errores**: el detalle muestra el error exacto y los datos enviados |
+| El proveedor no aparece al cargar una factura | Está inactivo: activalo en **Proveedores** |
 | `permission denied for table …` | Estás usando la llave pública (`anon` / `sb_publishable_…`) en lugar de la secreta |
 | `node: .dev.vars: not found` al correr `db:seed` | Creá `.dev.vars` (ver [paso 2](#2-configurar-el-proyecto-en-local)) o actualizá Node a ≥ 20.6 |
 | "CUIT inválido" con un CUIT real | Revisá que tenga 11 dígitos. El dígito verificador se calcula con el algoritmo módulo 11 de AFIP/ARCA |
-| No se puede eliminar una categoría | Tiene facturas asociadas: desactivala o reasigná sus facturas |
+| No se puede eliminar una categoría o un proveedor | Tiene facturas asociadas: desactivalo o reasigná sus facturas |
 | El gasto del mes no incluye una factura de hoy | Revisá que `APP_TIMEZONE` sea `America/Argentina/Buenos_Aires` y que la factura no esté anulada |
 | El navegador pide usuario y contraseña | Definiste `BASIC_AUTH_USER`/`BASIC_AUTH_PASS`. Para quitarlos: `npx wrangler secret delete …` |
 

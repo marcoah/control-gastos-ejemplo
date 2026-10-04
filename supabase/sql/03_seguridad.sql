@@ -11,6 +11,8 @@
 
 alter table public.categorias enable row level security;
 alter table public.facturas   enable row level security;
+alter table public.proveedores enable row level security;
+alter table public.logs       enable row level security;
 
 -- Por si en algún momento se crearon políticas abiertas, se eliminan.
 drop policy if exists "acceso publico categorias" on public.categorias;
@@ -19,7 +21,10 @@ drop policy if exists "acceso publico facturas"   on public.facturas;
 -- Quitar privilegios directos a los roles públicos
 revoke all on table public.categorias from anon, authenticated;
 revoke all on table public.facturas   from anon, authenticated;
-revoke all on table public.v_categorias from anon, authenticated;
+revoke all on table public.proveedores from anon, authenticated;
+revoke all on table public.logs       from anon, authenticated;
+revoke all on table public.v_categorias  from anon, authenticated;
+revoke all on table public.v_proveedores from anon, authenticated;
 
 -- Las funciones RPC sólo para service_role
 revoke execute on function public.dashboard_resumen(date) from public, anon, authenticated;
@@ -30,4 +35,7 @@ grant execute on function public.reset_datos()          to service_role;
 
 grant select, insert, update, delete, truncate on table public.categorias to service_role;
 grant select, insert, update, delete, truncate on table public.facturas   to service_role;
-grant select on table public.v_categorias to service_role;
+grant select, insert, update, delete, truncate on table public.proveedores to service_role;
+grant select, insert, update, delete, truncate on table public.logs        to service_role;
+grant select on table public.v_categorias  to service_role;
+grant select on table public.v_proveedores to service_role;

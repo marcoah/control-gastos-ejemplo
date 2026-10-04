@@ -34,7 +34,7 @@ export async function eliminarCategoria({ sb, params }) {
     throw new HttpError(409, `No se puede eliminar: la categoría tiene ${count} factura(s). Desactivala o reasigná sus facturas.`);
   }
   const { data, error } = await sb.from('categorias').delete().eq('id', id).select('id').maybeSingle();
-  if (error) throw fromSupabaseError(error);
+  if (error) throw fromSupabaseError(error, { contexto: 'eliminar' });
   if (!data) throw new HttpError(404, 'Categoría no encontrada.');
   return noContent();
 }

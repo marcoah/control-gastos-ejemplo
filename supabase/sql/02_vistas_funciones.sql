@@ -25,7 +25,36 @@ left join public.facturas f on f.categoria_id = c.id
 group by c.id;
 
 -- ---------------------------------------------------------------------
--- RPC: resumen para el dashboard
+-- Vista: proveedores con su categoría, cantidad de facturas, gasto
+-- histórico y fecha de la última factura
+-- ---------------------------------------------------------------------
+create or replace view public.v_proveedores
+with (security_invoker = true)
+as
+select
+  p.id,
+  p.razon_social,
+  p.cuit,
+  p.condicion_iva,
+  p.tipo_comprobante,
+  p.categoria_id,
+  c.nombre                                                           as categoria_nombre,
+  p.email,
+  p.telefono,
+  p.notas,
+  p.activo,
+  p.created_at,
+  p.updated_at,
+  count(f.id)::int                                                   as facturas,
+  coalesce(sum(f.total) filter (where f.estado <> 'cancelada'), 0)   as gasto_total,
+  max(f.fecha)                                                       as ultima_factura
+from public.proveedores p
+left join public.categorias c on c.id = p.categoria_id
+left join public.facturas   f on f.proveedor_id = p.id
+group by p.id, c.nombre;
+
+-- ---------------------------------------------------------------------
+-- RPC: resumen para el tablero
 --   p_hoy: fecha de corte (el Worker la envía en la zona horaria
 --          configurada en APP_TIMEZONE para evitar desfases UTC).
 -- Las facturas canceladas NO suman al gasto.
@@ -99,11 +128,13 @@ begin
 
     'top_proveedores',    (select coalesce(jsonb_agg(to_jsonb(x) order by x.total desc), '[]'::jsonb)
                              from (
-                               select proveedor, sum(total) as total, count(*)::int as facturas
-                                 from facturas
-                                where fecha between v_ini_mes and p_hoy and estado <> 'cancelada'
-                                group by proveedor
-                                order by sum(total) desc
+                               select p.id, p.razon_social as proveedor,
+                                      sum(f.total) as total, count(*)::int as facturas
+                                 from facturas f
+                                 join proveedores p on p.id = f.proveedor_id
+                                where f.fecha between v_ini_mes and p_hoy and f.estado <> 'cancelada'
+                                group by p.id, p.razon_social
+                                order by sum(f.total) desc
                                 limit 5
                              ) x),
 
@@ -124,8 +155,9 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------
--- RPC: reinicia la base a cero (borra facturas y categorías y reinicia
--- los contadores de id). Sólo la puede ejecutar service_role.
+-- RPC: reinicia la base a cero (borra facturas, proveedores, categorías
+-- y logs, y reinicia los contadores de id). Sólo la puede ejecutar
+-- service_role.
 -- Es SECURITY DEFINER porque RESTART IDENTITY exige ser dueño de las
 -- secuencias (el dueño es postgres, no service_role). El permiso de
 -- ejecución se restringe en 03_seguridad.sql.
@@ -137,6 +169,7 @@ security definer
 set search_path = public
 as $$
 begin
-  truncate table public.facturas, public.categorias restart identity cascade;
+  truncate table public.facturas, public.proveedores, public.categorias, public.logs
+    restart identity cascade;
 end;
 $$;

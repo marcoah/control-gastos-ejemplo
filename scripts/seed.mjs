@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // =====================================================================
 // Inserta datos de prueba en Supabase.
-//   npm run db:seed              -> 100 facturas
+//   npm run db:seed              -> 23 proveedores y 100 facturas
 //   npm run db:seed -- 250       -> 250 facturas
 // Lee SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY de .dev.vars
 // (o de variables de entorno). Los números de comprobante llevan el prefijo DEMO-
@@ -108,24 +108,45 @@ async function main() {
   const idPorNombre = Object.fromEntries(categorias.map((c) => [c.nombre, c.id]));
   console.log(`✔ ${categorias.length} categorías disponibles`);
 
-  // 2) Facturas
+  // 2) Proveedores (no duplica si ya existen por razón social o CUIT)
+  const filasProveedores = PROVEEDORES.map(([razon_social, cuit, categoria, tipo]) => ({
+    razon_social,
+    cuit,
+    condicion_iva: tipo === 'C' ? 'monotributista' : 'responsable_inscripto',
+    tipo_comprobante: tipo,
+    categoria_id: idPorNombre[categoria] ?? null,
+    notas: 'Proveedor de prueba',
+  }));
+  for (const fila of filasProveedores) {
+    const { error } = await sb.from('proveedores').insert(fila);
+    if (error && error.code !== '23505') throw error; // 23505 = ya existía
+  }
+  const { data: proveedores, error: errProv } = await sb.from('proveedores').select('id, razon_social, cuit');
+  if (errProv) throw errProv;
+  const proveedorPorNombre = Object.fromEntries(proveedores.map((p) => [p.razon_social, p]));
+  const proveedorPorCuit = Object.fromEntries(proveedores.filter((p) => p.cuit).map((p) => [p.cuit, p]));
+  console.log(`✔ ${proveedores.length} proveedores disponibles`);
+
+  // 3) Facturas
   const usados = new Set();
   const facturas = Array.from({ length: TOTAL }, (_, i) => {
-    const [proveedor, cuit, categoria, tipo, alicuota, min, max] = elegir(PROVEEDORES);
+    const [razonSocial, cuit, categoria, tipo, alicuota, min, max] = elegir(PROVEEDORES);
+    const prov = proveedorPorNombre[razonSocial] ?? proveedorPorCuit[cuit];
     let numero;
     do {
       const puntoVenta = String(1 + Math.floor(Math.random() * 5)).padStart(5, '0');
       const nro = String(1 + Math.floor(Math.random() * 99_999_999)).padStart(8, '0');
       numero = `DEMO-${puntoVenta}-${nro}`;
-    } while (usados.has(proveedor + tipo + numero));
-    usados.add(proveedor + tipo + numero);
+    } while (usados.has(razonSocial + tipo + numero));
+    usados.add(razonSocial + tipo + numero);
 
     const subtotal = redondear(azar(min, max));
     return {
       tipo_comprobante: tipo,
       numero_comprobante: numero,
-      proveedor,
-      cuit_proveedor: cuit,
+      proveedor_id: prov?.id,
+      proveedor: prov?.razon_social,
+      cuit_proveedor: prov?.cuit ?? null,
       fecha: fechaAleatoria(i),
       categoria_id: idPorNombre[categoria],
       subtotal,
@@ -134,14 +155,14 @@ async function main() {
       estado: estadoAleatorio(),
       notas: elegir(NOTAS),
     };
-  }).filter((f) => f.categoria_id);
+  }).filter((f) => f.categoria_id && f.proveedor_id);
 
   let insertadas = 0;
   for (let i = 0; i < facturas.length; i += 500) {
     const lote = facturas.slice(i, i + 500);
     const { data, error } = await sb
       .from('facturas')
-      .upsert(lote, { onConflict: 'proveedor,tipo_comprobante,numero_comprobante', ignoreDuplicates: true })
+      .upsert(lote, { onConflict: 'proveedor_id,tipo_comprobante,numero_comprobante', ignoreDuplicates: true })
       .select('id');
     if (error) throw error;
     insertadas += data.length;
@@ -154,8 +175,8 @@ async function main() {
 
 main().catch((err) => {
   console.error('✖ Error al insertar datos de prueba:', err.message || err);
-  if (err.code === '42P01' || err.code === 'PGRST205') {
-    console.error('  ¿Ya ejecutaste los SQL de supabase/sql en tu proyecto?');
+  if (['42P01', 'PGRST205', '42703', 'PGRST204'].includes(err.code)) {
+    console.error('  ¿Ejecutaste los SQL de supabase/sql (01 → 03) con la última versión?');
   }
   process.exit(1);
 });

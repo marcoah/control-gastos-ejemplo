@@ -1,6 +1,7 @@
 -- =====================================================================
 -- 90_datos_prueba.sql
--- Inserta 100 facturas de prueba (número de comprobante con prefijo DEMO-).
+-- Inserta 23 proveedores y 100 facturas de prueba (número de comprobante
+-- con prefijo DEMO-).
 --   * ~25 facturas en el mes en curso y ~75 repartidas en los 5 meses previos
 --   * 80% pagadas, 15% pendientes, 5% canceladas
 --   * Montos en pesos (ARS); IVA 21%, 27% (servicios) o 10,5% (pasajes);
@@ -24,9 +25,11 @@ insert into public.categorias (nombre, descripcion, color, presupuesto_mensual) 
   ('Combustible',               'Nafta y gasoil de vehículos',                       '#475569',  600000)
 on conflict (nombre) do nothing;
 
-with prov as (
-  select row_number() over () as idx, v.*
-  from (values
+-- Proveedores ficticios con sus rangos de montos (tabla temporal de la sesión)
+drop table if exists pg_temp.prov_demo;
+create temp table prov_demo as
+select row_number() over () as idx, v.*
+from (values
     -- proveedor,                                cuit,          categoría,                  tipo, alícuota, mín,     máx
     ('Librería Comercial Del Plata SRL',         '30712345604', 'Librería y oficina',       'A', 0.21,   15000,  350000),
     ('Insumos de Oficina Rivadavia SA',          '30712722912', 'Librería y oficina',       'A', 0.21,   25000,  480000),
@@ -51,7 +54,23 @@ with prov as (
     ('Estudio Contable Fernández',               '27714609462', 'Honorarios profesionales', 'C', 0,     350000, 1400000),
     ('Estudio Jurídico Gómez & Asoc.',           '33722155667', 'Honorarios profesionales', 'A', 0.21,  400000, 1800000),
     ('Estación de Servicio Avenida SA',          '30722532976', 'Combustible',              'A', 0.21,   40000,  180000)
-  ) as v(proveedor, cuit, categoria, tipo, alicuota, min_monto, max_monto)
+) as v(proveedor, cuit, categoria, tipo, alicuota, min_monto, max_monto);
+
+insert into public.proveedores (razon_social, cuit, condicion_iva, tipo_comprobante, categoria_id, notas)
+select d.proveedor,
+       d.cuit,
+       case when d.tipo = 'C' then 'monotributista' else 'responsable_inscripto' end,
+       d.tipo,
+       c.id,
+       'Proveedor de prueba'
+  from prov_demo d
+  join public.categorias c on c.nombre = d.categoria
+on conflict do nothing;
+
+with prov as (
+  select d.*, p.id as proveedor_id
+    from prov_demo d
+    join public.proveedores p on p.razon_social = d.proveedor
 ),
 gen as (
   select
@@ -72,17 +91,18 @@ gen as (
 filas as (
   select
     gen.*,
-    p.proveedor, p.cuit, p.categoria, p.tipo, p.alicuota,
+    p.proveedor_id, p.proveedor, p.cuit, p.categoria, p.tipo, p.alicuota,
     round((p.min_monto + gen.r_monto * (p.max_monto - p.min_monto))::numeric, 2) as subtotal
   from gen
   join prov p on p.idx = gen.pick
 )
 insert into public.facturas
-  (tipo_comprobante, numero_comprobante, proveedor, cuit_proveedor, fecha, categoria_id,
+  (tipo_comprobante, numero_comprobante, proveedor_id, proveedor, cuit_proveedor, fecha, categoria_id,
    subtotal, impuestos, metodo_pago, estado, notas)
 select
   f.tipo,
   'DEMO-' || f.punto_venta || '-' || f.numero,
+  f.proveedor_id,
   f.proveedor,
   f.cuit,
   f.fecha,
@@ -96,6 +116,8 @@ select
   'Registro de prueba'
 from filas f
 join public.categorias c on c.nombre = f.categoria
-on conflict (proveedor, tipo_comprobante, numero_comprobante) do nothing;
+on conflict (proveedor_id, tipo_comprobante, numero_comprobante) do nothing;
 
 select count(*) as facturas_demo from public.facturas where numero_comprobante like 'DEMO-%';
+
+drop table if exists pg_temp.prov_demo;

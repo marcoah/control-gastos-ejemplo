@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // =====================================================================
 // Limpia la base de datos.
-//   npm run db:reset                 -> borra TODO (facturas + categorías) y
+//   npm run db:reset                 -> borra TODO (facturas, proveedores, categorías y logs) y
 //                                       reinicia los ids (pide confirmación)
 //   npm run db:reset -- --yes        -> igual, sin preguntar
-//   npm run db:reset:demo            -> sólo borra las facturas DEMO-*
+//   npm run db:reset:demo            -> sólo borra las facturas DEMO-* y los proveedores de prueba sin facturas
 // La estructura de tablas no se toca.
 // =====================================================================
 import { createClient } from '@supabase/supabase-js';
@@ -39,10 +39,19 @@ async function main() {
     const { data, error } = await sb.from('facturas').delete().like('numero_comprobante', 'DEMO-%').select('id');
     if (error) throw error;
     console.log(`✔ ${data.length} facturas de prueba eliminadas.`);
+
+    // Proveedores de prueba que quedaron sin facturas
+    const { data: provs, error: errProv } = await sb.from('v_proveedores').select('id').eq('notas', 'Proveedor de prueba').eq('facturas', 0);
+    if (errProv) throw errProv;
+    if (provs.length) {
+      const { error: errDel } = await sb.from('proveedores').delete().in('id', provs.map((p) => p.id));
+      if (errDel) throw errDel;
+    }
+    console.log(`✔ ${provs.length} proveedores de prueba eliminados.`);
     return;
   }
 
-  if (!(await confirmar('⚠  Se borrarán TODAS las facturas y categorías.'))) return console.log('Cancelado.');
+  if (!(await confirmar('⚠  Se borrarán TODAS las facturas, proveedores, categorías y logs.'))) return console.log('Cancelado.');
 
   const { error } = await sb.rpc('reset_datos');
   if (error) throw error;
