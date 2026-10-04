@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="es-AR" class="h-full">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Control de Gastos</title>
+  <meta name="description" content="Carga de facturas, categorías y tablero de gastos.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%231e3a8a'/%3E%3Cpath d='M7 8h10M7 12h10M7 16h6' stroke='white' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+  <script>
+    tailwind.config = {
+      theme: { extend: { fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'] } } },
+    };
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js" defer></script>
+  <style>
+    .tabular { font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+<body class="h-full bg-slate-50 font-sans text-slate-800 antialiased">
+
+  <!-- ============================== NAV ============================== -->
+  <header class="bg-blue-900 shadow-lg shadow-blue-900/10">
+    <div class="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
+      <a href="#dashboard" class="flex items-center gap-3">
+        <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 ring-1 ring-white/20">
+          <svg class="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 14.25l6-6m4.5-3.493V21.75l-3.75-1.5-3.75 1.5-3.75-1.5-3.75 1.5V4.757c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0c1.1.128 1.907 1.077 1.907 2.185zM9.75 9h.008v.008H9.75V9zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm4.125 4.5h.008v.008h-.008V13.5zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" /></svg>
+        </span>
+        <span>
+          <span class="block text-lg font-semibold leading-tight text-white">Control de Gastos</span>
+          <span class="block text-xs text-blue-200">Facturas · Categorías · Indicadores</span>
+        </span>
+      </a>
+      <nav class="flex gap-1 rounded-xl bg-blue-950/40 p-1 ring-1 ring-white/10" id="nav">
+        <a href="#dashboard" data-nav="dashboard" class="nav-link rounded-lg px-4 py-2 text-sm font-medium text-blue-100 transition hover:bg-white/10 hover:text-white">Tablero</a>
+        <a href="#facturas" data-nav="facturas" class="nav-link rounded-lg px-4 py-2 text-sm font-medium text-blue-100 transition hover:bg-white/10 hover:text-white">Facturas</a>
+        <a href="#categorias" data-nav="categorias" class="nav-link rounded-lg px-4 py-2 text-sm font-medium text-blue-100 transition hover:bg-white/10 hover:text-white">Categorías</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+
+    <!-- ============================ DASHBOARD ============================ -->
+    <section id="view-dashboard" data-view="dashboard" class="hidden space-y-6">
+      <div class="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 class="text-2xl font-bold tracking-tight text-slate-900">Resumen</h1>
+          <p class="mt-1 text-sm text-slate-500">Corte al <span id="dash-fecha" class="font-medium text-slate-700">—</span>. Las facturas anuladas no suman al gasto.</p>
+        </div>
+        <div class="flex gap-2">
+          <button type="button" id="dash-refresh" class="inline-flex items-center gap-2 rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-inset ring-slate-300 hover:bg-slate-50">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>
+            Actualizar
+          </button>
+          <a href="#facturas" data-action="nueva-factura" class="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-800">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2.2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+            Nueva factura
+          </a>
+        </div>
+      </div>
+
+      <!-- KPIs -->
+      <div id="kpis" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"></div>
+
+      <div class="grid gap-6 lg:grid-cols-3">
+        <div class="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200 lg:col-span-2">
+          <div class="flex items-center justify-between">
+            <div>
+              <h2 class="text-base font-semibold text-slate-900">Gasto mensual</h2>
+              <p class="text-sm text-slate-500">Últimos 6 meses (el mes en curso va a la fecha)</p>
+            </div>
+          </div>
+          <div class="relative mt-4 h-72"><canvas id="chart-tendencia" aria-label="Gráfica de gasto de los últimos 6 meses" role="img"></canvas></div>
+        </div>
+
+        <div class="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+          <h2 class="text-base font-semibold text-slate-900">Presupuesto por categoría</h2>
+          <p class="text-sm text-slate-500">Gasto del mes vs. presupuesto mensual</p>
+          <ul id="dash-presupuesto" class="mt-5 space-y-4"></ul>
+        </div>
+      </div>
+
+      <div class="grid gap-6 lg:grid-cols-3">
+        <div class="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 lg:col-span-2">
+          <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+            <h2 class="text-base font-semibold text-slate-900">Últimas facturas cargadas</h2>
+            <a href="#facturas" class="text-sm font-semibold text-blue-700 hover:text-blue-800">Ver todas →</a>
+          </div>
+          <ul id="dash-ultimas" class="divide-y divide-slate-100"></ul>
+        </div>
+        <div class="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+          <div class="border-b border-slate-200 px-6 py-4">
+            <h2 class="text-base font-semibold text-slate-900">Top proveedores del mes</h2>
+          </div>
+          <ol id="dash-proveedores" class="divide-y divide-slate-100"></ol>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================= FACTURAS ============================= -->
+    <section id="view-facturas" data-view="facturas" class="hidden space-y-6">
+      <div>
+        <h1 class="text-2xl font-bold tracking-tight text-slate-900">Facturas</h1>
+        <p class="mt-1 text-sm text-slate-500">Cargá, consultá y editá los comprobantes de gasto.</p>
+      </div>
+
+      <!-- Formulario -->
+      <form id="form-factura" novalidate class="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-6 py-4">
+          <div>
+            <h2 id="factura-form-titulo" class="text-base font-semibold text-slate-900">Nueva factura</h2>
+            <p class="text-sm text-slate-500">Los campos con <span class="text-red-600">*</span> son obligatorios.</p>
+          </div>
+          <span id="factura-editando" class="hidden rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 ring-1 ring-inset ring-amber-600/20"></span>
+        </div>
+
+        <div class="grid gap-x-6 gap-y-5 px-6 py-6 sm:grid-cols-2 lg:grid-cols-6">
+          <input type="hidden" name="id">
+
+          <div class="lg:col-span-1">
+            <label for="f-tipo" class="block text-sm font-medium text-slate-700">Tipo <span class="text-red-600">*</span></label>
+            <select id="f-tipo" name="tipo_comprobante" class="mt-1.5 block w-full rounded-lg border-slate-300 text-sm shadow-sm focus:border-blue-600 focus:ring-blue-600">
+              <option value="A">Factura A</option>
+              <option value="B">Factura B</option>
+              <option value="C">Factura C</option>
+              <option value="M">Factura M</option>
+              <option value="E">Factura E</option>
+            </select>
+            <p data-error="tipo_comprobante" class="mt-1 hidden text-xs text-red-600"></p>
+          </div>
+          <div class="lg:col-span-2">
+            <label for="f-numero" class="block text-sm font-medium text-slate-700">N.º de comprobante <span class="text-red-600">*</span></label>
+            <input id="f-numero" name="numero_comprobante" type="text" maxlength="40" required placeholder="00003-00012345" class="mt-1.5 block w-full rounded-lg border-slate-300 font-mono text-sm shadow-sm focus:border-blue-600 focus:ring-blue-600">
+            <p data-error="numero_comprobante" class="mt-1 hidden text-xs text-red-600"></p>
+          </div>
+          <div class="lg:col-span-1">
+            <label for="f-fecha" class="block text-sm font-medium text-slate-700">Fecha <span class="text-red-600">*</span></label>
+            <input id="f-fecha" name="fecha" type="date" required class="mt-1.5 block w-full rounded-lg border-slate-300 text-sm shadow-sm focus:border-blue-600 focus:ring-blue-600">
+            <p data-error="fecha" class="mt-1 hidden text-xs text-red-600"></p>
+          </div>
+          <div class="lg:col-span-2">
+            <label for="f-categoria" class="block text-sm font-medium text-slate-700">Categoría <span class="text-red-600">*</span></label>
+            <select id="f-categoria" name="categoria_id" required class="mt-1.5 block w-full rounded-lg border-slate-300 text-sm shadow-sm focus:border-blue-600 focus:ring-blue-600"></select>
+            <p data-error="categoria_id" class="mt-1 hidden text-xs text-red-600"></p>
+          </div>
+
+          <div class="sm:col-span-2 lg:col-span-4">
+            <label for="f-proveedor" class="block text-sm font-medium text-slate-700">Proveedor <span class="text-red-600">*</span></label>
+            <input id="f-proveedor" name="proveedor" type="text" maxlength="150" required list="lista-proveedores" placeholder="Razón social del proveedor" class="mt-1.5 block w-full rounded-lg border-slate-300 text-sm shadow-sm focus:border-blue-600 focus:ring-blue-600">
+            <datalist id="lista-proveedores"></datalist>
+            <p data-error="proveedor" class="mt-1 hidden text-xs text-red-600"></p>
+          </div>
+          <div class="lg:col-span-2">
+            <label for="f-cuit" class="block text-sm font-medium text-slate-700">CUIT del proveedor</label>
+            <input id="f-cuit" name="cuit_proveedor" type="text" inputmode="numeric" maxlength="13" placeholder="30-71234560-4" class="mt-1.5 block w-full rounded-lg border-slate-300 font-mono text-sm shadow-sm focus:border-blue-600 focus:ring-blue-600">
+            <p data-error="cuit_proveedor" class="mt-1 hidden text-xs text-red-600"></p>
+          </div>
+
+          <div class="lg:col-span-2">
+            <label for="f-subtotal" class="block text-sm font-medium text-slate-700">Neto gravado / subtotal <span class="text-red-600">*</span></label>
+            <div class="relative mt-1.5">
+              <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-sm text-slate-400">$</span>
+              <input id="f-subtotal" name="subtotal" type="number" min="0" step="0.01" required placeholder="0,00" class="block w-full rounded-lg border-slate-300 pl-7 text-sm tabular shadow-sm focus:border-blue-600 focus:ring-blue-600">
+            </div>
+            <p data-error="subtotal" class="mt-1 hidden text-xs text-red-600"></p>
+          </div>
+          <div class="lg:col-span-2">
+            <div class="flex items-center justify-between gap-2">
+              <label for="f-impuestos" class="block text-sm font-medium text-slate-700">IVA y percepciones</label>
+              <label for="f-alicuota" class="sr-only">Alícuota de IVA</label>
+              <select id="f-alicuota" class="rounded-md border-0 bg-slate-100 py-0.5 pl-2 pr-7 text-xs font-medium text-slate-600 focus:ring-2 focus:ring-blue-600">
+                <option value="0.21">IVA 21 %</option>
+                <option value="0.105">IVA 10,5 %</option>
+                <option value="0.27">IVA 27 %</option>
+                <option value="0">Exento / no discrimina</option>
+                <option value="manual">Manual</option>
+              </select>
+            </div>
+            <div class="relative mt-1.5">
+              <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-sm text-slate-400">$</span>
+              <input id="f-impuestos" name="impuestos" type="number" min="0" step="0.01" placeholder="0,00" class="block w-full rounded-lg border-slate-300 pl-7 text-sm tabular shadow-sm focus:border-blue-600 focus:ring-blue-600">
+            </div>
+            <p data-error="impuestos" class="mt-1 hidden text-xs text-red-600"></p>
+          </div>
+          <div class="lg:col-span-2">
+            <span class="block text-sm font-medium text-slate-700">Total</span>
+            <div class="mt-1.5 flex h-[38px] items-center rounded-lg bg-blue-50 px-3 text-base font-semibold text-blue-900 tabular ring-1 ring-inset ring-blue-200" id="f-total">$ 0,00</div>
+          </div>
+
+          <div class="lg:col-span-3">
+            <label for="f-metodo" class="block text-sm font-medium text-slate-700">Medio de pago</label>
+            <select id="f-metodo" name="metodo_pago" class="mt-1.5 block w-full rounded-lg border-slate-300 text-sm shadow-sm focus:border-blue-600 focus:ring-blue-600">
+              <option value="transferencia">Transferencia</option>
+              <option value="tarjeta_credito">Tarjeta de crédito</option>
+              <option value="tarjeta_debito">Tarjeta de débito</option>
+              <option value="efectivo">Efectivo</option>
+              <option value="cheque">Cheque / eCheq</option>
+              <option value="billetera_virtual">Billetera virtual (Mercado Pago, etc.)</option>
+            </select>
+          </div>
+          <div class="lg:col-span-3">
+            <span class="block text-sm font-medium text-slate-700">Estado</span>
+            <div class="mt-1.5 grid grid-cols-3 gap-2" role="radiogroup">
+              <label class="estado-opcion flex cursor-pointer items-center justify-center rounded-lg px-3 py-2 text-sm font-medium ring-1 ring-inset ring-slate-300 has-[:checked]:bg-blue-700 has-[:checked]:text-white has-[:checked]:ring-blue-700">
+                <input type="radio" name="estado" value="pagada" class="sr-only" checked> Pagada
+              </label>
+              <label class="estado-opcion flex cursor-pointer items-center justify-center rounded-lg px-3 py-2 text-sm font-medium ring-1 ring-inset ring-slate-300 has-[:checked]:bg-blue-700 has-[:checked]:text-white has-[:checked]:ring-blue-700">
+                <input type="radio" name="estado" value="pendiente" class="sr-only"> Pendiente
+              </label>
+              <label class="estado-opcion flex cursor-pointer items-center justify-center rounded-lg px-3 py-2 text-sm font-medium ring-1 ring-inset ring-slate-300 has-[:checked]:bg-blue-700 has-[:checked]:text-white has-[:checked]:ring-blue-700">
+                <input type="radio" name="estado" value="cancelada" class="sr-only"> Anulada
+              </label>
+            </div>
+          </div>
+
+          <div class="sm:col-span-2 lg:col-span-6">
+            <label for="f-notas" class="block text-sm font-medium text-slate-700">Notas</label>
+            <textarea id="f-notas" name="notas" rows="2" maxlength="500" placeholder="Concepto, centro de costos, comentarios…" class="mt-1.5 block w-full rounded-lg border-slate-300 text-sm shadow-sm focus:border-blue-600 focus:ring-blue-600"></textarea>
+            <p data-error="notas" class="mt-1 hidden text-xs text-red-600"></p>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-end gap-3 rounded-b-2xl border-t border-slate-200 bg-slate-50 px-6 py-4">
+          <button type="button" id="factura-cancelar" class="rounded-lg px-3.5 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900">Limpiar</button>
+          <button type="submit" id="factura-guardar" class="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700 disabled:cursor-not-allowed disabled:opacity-60">Guardar factura</button>
+        </div>
+      </form>
+
+      <!-- Listado -->
+      <div class="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+        <form id="filtros-facturas" class="grid gap-3 border-b border-slate-200 px-6 py-4 sm:grid-cols-2 lg:grid-cols-6">
+          <div class="lg:col-span-2">
+            <label for="flt-q" class="sr-only">Buscar</label>
+            <input id="flt-q" name="q" type="search" placeholder="Buscar por proveedor, n.º de comprobante o CUIT…" class="block w-full rounded-lg border-slate-300 text-sm shadow-sm focus:border-blue-600 focus:ring-blue-600">
+          </div>
+          <div>
+            <label for="flt-categoria" class="sr-only">Categoría</label>
+            <select id="flt-categoria" name="categoria_id" class="block w-full rounded-lg border-slate-300 text-sm shadow-sm focus:border-blue-600 focus:ring-blue-600"></select>
+          </div>
+          <div>
+            <label for="flt-estado" class="sr-only">Estado</label>
+            <select id="flt-estado" name="estado" class="block w-full rounded-lg border-slate-300 text-sm shadow-sm focus:border-blue-600 focus:ring-blue-600">
+              <option value="">Todos los estados</option>
+              <option value="pagada">Pagada</option>
+              <option value="pendiente">Pendiente</option>
+              <option value="cancelada">Anulada</option>
+            </select>
+          </div>
+          <div>
+            <label for="flt-desde" class="sr-only">Desde</label>
+            <input id="flt-desde" name="desde" type="date" title="Desde" class="block w-full rounded-lg border-slate-300 text-sm shadow-sm focus:border-blue-600 focus:ring-blue-600">
+          </div>
+          <div>
+            <label for="flt-hasta" class="sr-only">Hasta</label>
+            <input id="flt-hasta" name="hasta" type="date" title="Hasta" class="block w-full rounded-lg border-slate-300 text-sm shadow-sm focus:border-blue-600 focus:ring-blue-600">
+          </div>
+        </form>
+
+        <div class="overflow-x-auto">
+          <table class="min-w-full divide-y divide-slate-200 text-sm">
+            <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <tr>
+                <th class="px-6 py-3">Fecha</th>
+                <th class="px-3 py-3">Comprobante</th>
+                <th class="px-3 py-3">Proveedor</th>
+                <th class="px-3 py-3">Categoría</th>
+                <th class="px-3 py-3">Estado</th>
+                <th class="px-3 py-3 text-right">Total</th>
+                <th class="px-6 py-3 text-right"><span class="sr-only">Acciones</span></th>
+              </tr>
+            </thead>
+            <tbody id="tabla-facturas" class="divide-y divide-slate-100 bg-white"></tbody>
+          </table>
+        </div>
+
+        <div class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-6 py-3 text-sm text-slate-600">
+          <span id="facturas-info">—</span>
+          <div class="flex gap-2">
+            <button type="button" id="pag-anterior" class="rounded-lg px-3 py-1.5 font-medium ring-1 ring-inset ring-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">Anterior</button>
+            <button type="button" id="pag-siguiente" class="rounded-lg px-3 py-1.5 font-medium ring-1 ring-inset ring-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">Siguiente</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================ CATEGORÍAS ============================ -->
+    <section id="view-categorias" data-view="categorias" class="hidden space-y-6">
+      <div>
+        <h1 class="text-2xl font-bold tracking-tight text-slate-900">Categorías</h1>
+        <p class="mt-1 text-sm text-slate-500">Administrá el catálogo de categorías y su presupuesto mensual.</p>
+      </div>
+
+      <div class="grid items-start gap-6 lg:grid-cols-3">
+        <form id="form-categoria" novalidate class="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 lg:sticky lg:top-6">
+          <div class="border-b border-slate-200 px-6 py-4">
+            <h2 id="categoria-form-titulo" class="text-base font-semibold text-slate-900">Nueva categoría</h2>
+          </div>
+          <div class="space-y-5 px-6 py-6">
+            <input type="hidden" name="id">
+            <div>
+              <label for="c-nombre" class="block text-sm font-medium text-slate-700">Nombre <span class="text-red-600">*</span></label>
+              <input id="c-nombre" name="nombre" type="text" maxlength="80" required class="mt-1.5 block w-full rounded-lg border-slate-300 text-sm shadow-sm focus:border-blue-600 focus:ring-blue-600">
+              <p data-error="nombre" class="mt-1 hidden text-xs text-red-600"></p>
+            </div>
+            <div>
+              <label for="c-descripcion" class="block text-sm font-medium text-slate-700">Descripción</label>
+              <textarea id="c-descripcion" name="descripcion" rows="2" maxlength="300" class="mt-1.5 block w-full rounded-lg border-slate-300 text-sm shadow-sm focus:border-blue-600 focus:ring-blue-600"></textarea>
+              <p data-error="descripcion" class="mt-1 hidden text-xs text-red-600"></p>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label for="c-presupuesto" class="block text-sm font-medium text-slate-700">Presupuesto mensual</label>
+                <div class="relative mt-1.5">
+                  <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-sm text-slate-400">$</span>
+                  <input id="c-presupuesto" name="presupuesto_mensual" type="number" min="0" step="0.01" placeholder="Opcional" class="block w-full rounded-lg border-slate-300 pl-7 text-sm tabular shadow-sm focus:border-blue-600 focus:ring-blue-600">
+                </div>
+                <p data-error="presupuesto_mensual" class="mt-1 hidden text-xs text-red-600"></p>
+              </div>
+              <div>
+                <label for="c-color" class="block text-sm font-medium text-slate-700">Color</label>
+                <input id="c-color" name="color" type="color" value="#1d4ed8" class="mt-1.5 block h-[38px] w-full cursor-pointer rounded-lg border border-slate-300 bg-white p-1 shadow-sm">
+                <p data-error="color" class="mt-1 hidden text-xs text-red-600"></p>
+              </div>
+            </div>
+            <label class="flex items-center justify-between rounded-lg bg-slate-50 px-4 py-3 ring-1 ring-inset ring-slate-200">
+              <span>
+                <span class="block text-sm font-medium text-slate-700">Activa</span>
+                <span class="block text-xs text-slate-500">Las inactivas no aparecen al cargar facturas.</span>
+              </span>
+              <input name="activa" type="checkbox" checked class="h-5 w-5 rounded border-slate-300 text-blue-700 focus:ring-blue-600">
+            </label>
+          </div>
+          <div class="flex items-center justify-end gap-3 rounded-b-2xl border-t border-slate-200 bg-slate-50 px-6 py-4">
+            <button type="button" id="categoria-cancelar" class="rounded-lg px-3.5 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900">Limpiar</button>
+            <button type="submit" id="categoria-guardar" class="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60">Guardar categoría</button>
+          </div>
+        </form>
+
+        <div class="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 lg:col-span-2">
+          <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-slate-200 text-sm">
+              <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th class="px-6 py-3">Categoría</th>
+                  <th class="px-3 py-3 text-right">Presupuesto</th>
+                  <th class="px-3 py-3 text-right">Facturas</th>
+                  <th class="px-3 py-3 text-right">Gasto histórico</th>
+                  <th class="px-3 py-3">Estado</th>
+                  <th class="px-6 py-3 text-right"><span class="sr-only">Acciones</span></th>
+                </tr>
+              </thead>
+              <tbody id="tabla-categorias" class="divide-y divide-slate-100"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="mx-auto max-w-7xl px-4 pb-10 text-center text-xs text-slate-400 sm:px-6 lg:px-8">
+    Control de Gastos · Cloudflare Workers + Supabase
+  </footer>
+
+  <!-- Toasts -->
+  <div id="toasts" aria-live="polite" class="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex flex-col items-center gap-2 p-4 sm:items-end"></div>
+
+  <!-- Modal de confirmación -->
+  <div id="modal" class="fixed inset-0 z-40 hidden" role="dialog" aria-modal="true" aria-labelledby="modal-titulo">
+    <div class="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" data-modal-cerrar></div>
+    <div class="relative flex min-h-full items-center justify-center p-4">
+      <div class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl ring-1 ring-slate-200">
+        <div class="flex gap-4">
+          <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-50">
+            <svg class="h-5 w-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" /></svg>
+          </span>
+          <div>
+            <h3 id="modal-titulo" class="text-base font-semibold text-slate-900">¿Confirmar?</h3>
+            <p id="modal-mensaje" class="mt-1 text-sm text-slate-600"></p>
+          </div>
+        </div>
+        <div class="mt-6 flex justify-end gap-3">
+          <button type="button" data-modal-cerrar class="rounded-lg px-3.5 py-2 text-sm font-semibold text-slate-700 ring-1 ring-inset ring-slate-300 hover:bg-slate-50">Cancelar</button>
+          <button type="button" id="modal-aceptar" class="rounded-lg bg-red-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-red-700">Eliminar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

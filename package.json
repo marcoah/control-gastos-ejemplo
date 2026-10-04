@@ -1,0 +1,24 @@
+{
+  "name": "control-gastos",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Control de gastos con facturas y categorías. Cloudflare Workers + Supabase.",
+  "type": "module",
+  "engines": {
+    "node": ">=20.6"
+  },
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "check": "wrangler deploy --dry-run --outdir dist",
+    "db:seed": "node --env-file=.dev.vars scripts/seed.mjs",
+    "db:reset": "node --env-file=.dev.vars scripts/reset.mjs",
+    "db:reset:demo": "node --env-file=.dev.vars scripts/reset.mjs --solo-prueba"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

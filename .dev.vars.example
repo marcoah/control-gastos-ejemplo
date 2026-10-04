@@ -1,0 +1,15 @@
+# Copiá este archivo como .dev.vars y completá los valores.
+# Lo usan `wrangler dev` y los scripts `npm run db:seed` / `npm run db:reset`.
+# NUNCA subas .dev.vars al repositorio (ya está en .gitignore).
+
+# Project Settings -> Data API -> Project URL
+SUPABASE_URL=https://xxxxxxxxxxxxxxxxxxxx.supabase.co
+
+# Project Settings -> API Keys -> llave secreta (sb_secret_...) o la
+# legacy "service_role". Da acceso total: sólo en el servidor.
+SUPABASE_SERVICE_ROLE_KEY=sb_secret_xxxxxxxxxxxxxxxxxxxxxxxx
+
+# Opcional: protege toda la app con usuario/contraseña (HTTP Basic Auth).
+# Si los dejás vacíos, la app queda abierta.
+BASIC_AUTH_USER=
+BASIC_AUTH_PASS=

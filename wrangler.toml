@@ -1,0 +1,24 @@
+name = "control-gastos"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+# El frontend estático vive en ./public. `run_worker_first` hace que TODAS
+# las peticiones pasen primero por el Worker (necesario para la autenticación
+# básica opcional); el Worker entrega los archivos con env.ASSETS.
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = true
+
+# Variables NO secretas. Los secretos (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
+# BASIC_AUTH_USER, BASIC_AUTH_PASS) se cargan con `wrangler secret put` en
+# producción y con el archivo .dev.vars en local.
+[vars]
+APP_TIMEZONE = "America/Argentina/Buenos_Aires"
+APP_LOCALE = "es-AR"
+APP_CURRENCY = "ARS"
+APP_IVA = "0.21"
+
+[observability]
+enabled = true
